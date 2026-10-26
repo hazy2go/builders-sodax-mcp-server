@@ -28,16 +28,20 @@ const MAX_SUGGESTIONS = 5;
 // What many wallets and aggregators pass for an EVM chain's gas token.
 const EVM_NATIVE_PLACEHOLDER = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
-export function resolveToken(catalog: SwapCatalog, chainQuery: string, query: string): Resolution {
+/** A chain as a person would name it, or by EVM chain id; refused with the supported list otherwise. */
+export function resolveSwapChain(catalog: SwapCatalog, chainQuery: string): ChainInfo {
   const key = findChainKey(catalog, chainQuery);
   if (!key) {
     throw new ActionError("UNSUPPORTED_CHAIN", "No SODAX swap chain matches that name, key or chain id.", {
       details: { supportedChains: Object.keys(catalog.tokens).map(toChain) },
     });
   }
+  return toChain(key);
+}
 
-  const chain = toChain(key);
-  const tokens = catalog.tokens[key];
+export function resolveToken(catalog: SwapCatalog, chainQuery: string, query: string): Resolution {
+  const chain = resolveSwapChain(catalog, chainQuery);
+  const tokens = catalog.tokens[chain.key];
   // A listed chain with no usable token means its entries failed validation, not that it has none.
   if (tokens.length === 0) {
     throw new ActionError("UPSTREAM_UNAVAILABLE", `The swap token list for ${chain.name} is unavailable.`);
@@ -50,10 +54,10 @@ export function resolveToken(catalog: SwapCatalog, chainQuery: string, query: st
     suggestions,
   });
 
-  const byAddress = findToken(catalog, key, q);
+  const byAddress = findToken(catalog, chain.key, q);
   if (byAddress) return { status: "resolved", chain, matchedBy: "address", token: byAddress };
 
-  const isEvm = catalog.chains[key]?.type === "EVM";
+  const isEvm = catalog.chains[chain.key]?.type === "EVM";
   if (q.toLowerCase() === "native" || (isEvm && q.toLowerCase() === EVM_NATIVE_PLACEHOLDER)) {
     const native = tokens.find(token => token.isNative);
     return native ? { status: "resolved", chain, matchedBy: "native", token: native } : notFound([]);
@@ -75,7 +79,7 @@ export function resolveToken(catalog: SwapCatalog, chainQuery: string, query: st
 
   // At most one per chain, never a native token: the zero address is each chain's own gas token, not one token.
   const otherChains = Object.keys(catalog.tokens)
-    .filter(other => other !== key)
+    .filter(other => other !== chain.key)
     .flatMap(other => {
       const token = findToken(catalog, other, q);
       return token && !token.isNative ? [{ chain: toChain(other), token }] : [];
@@ -110,7 +114,7 @@ function suggest(tokens: SwapsApiToken[], needle: string): SwapsApiToken[] {
   return suggestions.slice(0, MAX_SUGGESTIONS);
 }
 
-function toChain(key: string): ChainInfo {
+export function toChain(key: string): ChainInfo {
   return { key, name: chainDisplayName(key) };
 }
 
