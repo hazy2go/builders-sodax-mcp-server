@@ -220,7 +220,7 @@ describe("sodax_swap_quote", () => {
     expect(out).toMatchObject({ afterSend: { tool: "sodax_swap_track", args: { quoteId: out.quoteId } } });
     expect(out.nextStep).toContain(`on Sonic (at least 4.941968) at ${USER}`);
     expect(out.nextStep).toContain("the sender's own address: make sure they control it on Sonic");
-    expect(out.nextStep).toContain("Balances aren't checked here.");
+    expect(out.nextStep).toContain("Balances aren't checked here; sodax_get_balance reads them.");
     expect(out.nextStep).toContain("then call sodax_swap_track with the quoteId");
     expect(out.nextStep).not.toContain("don't send");
   });

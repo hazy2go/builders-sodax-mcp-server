@@ -1,16 +1,17 @@
 /**
- * Resolve "a token on a chain", as a person would name it, against the swap catalog.
+ * Resolve what a person names (a chain, a token on it, an address) against the swap catalog.
  *
- * First rule that matches wins: contract address → `native` or an exact symbol →
+ * Tokens: first rule that matches wins: contract address → `native` or an exact symbol →
  * a fuzzy match (always `ambiguous`: USDT0 is not USDT) → `not_found` with suggestions,
  * and any other chains that list the query as a non-native token address.
  * Returns structure only; each tool words its own next step.
  */
 
 import { chainDisplayName } from "../../constants.js";
+import { encodeRecipient } from "../sodax.js";
 import { type ChainInfo, resolveChainKey } from "../sodaxApi.js";
 import { ActionError } from "./errors.js";
-import { type SwapCatalog, type SwapsApiToken, findToken } from "./tokens.js";
+import { type SwapCatalog, type SwapsApiToken, findToken, nativeToken } from "./tokens.js";
 
 export type Resolution =
   | { status: "resolved"; chain: ChainInfo; matchedBy: "address" | "symbol" | "native"; token: SwapsApiToken }
@@ -28,6 +29,18 @@ const MAX_SUGGESTIONS = 5;
 // What many wallets and aggregators pass for an EVM chain's gas token.
 const EVM_NATIVE_PLACEHOLDER = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
+/**
+ * An address valid on the chain (EIP-55 for EVM), as typed. An all-zero address in any family (EVM
+ * `0x0…0`, Sui `0x0`, Solana's system program) burns what it receives, so it's refused too.
+ */
+export function checkAddress(address: string, chain: ChainInfo): string {
+  const encoded = encodeRecipient(chain.key, address);
+  if (!encoded || /^0x0*$/.test(encoded)) {
+    throw new ActionError("INVALID_ADDRESS", `That isn't a valid address on ${chain.name}.`);
+  }
+  return address;
+}
+
 /** A chain as a person would name it, or by EVM chain id; refused with the supported list otherwise. */
 export function resolveSwapChain(catalog: SwapCatalog, chainQuery: string): ChainInfo {
   const key = findChainKey(catalog, chainQuery);
@@ -37,6 +50,20 @@ export function resolveSwapChain(catalog: SwapCatalog, chainQuery: string): Chai
     });
   }
   return toChain(key);
+}
+
+/** The one token a query names, or `UNKNOWN_TOKEN` (ambiguous or not found: `sodax_resolve_token` explains which). */
+export function resolveExactly(
+  catalog: SwapCatalog,
+  chainQuery: string,
+  query: string,
+  details?: Record<string, unknown>,
+): Extract<Resolution, { status: "resolved" }> {
+  const resolution = resolveToken(catalog, chainQuery, query);
+  if (resolution.status !== "resolved") {
+    throw new ActionError("UNKNOWN_TOKEN", "That token doesn't resolve to exactly one swap token.", { details });
+  }
+  return resolution;
 }
 
 export function resolveToken(catalog: SwapCatalog, chainQuery: string, query: string): Resolution {
@@ -59,7 +86,7 @@ export function resolveToken(catalog: SwapCatalog, chainQuery: string, query: st
 
   const isEvm = catalog.chains[chain.key]?.type === "EVM";
   if (q.toLowerCase() === "native" || (isEvm && q.toLowerCase() === EVM_NATIVE_PLACEHOLDER)) {
-    const native = tokens.find(token => token.isNative);
+    const native = nativeToken(catalog, chain.key);
     return native ? { status: "resolved", chain, matchedBy: "native", token: native } : notFound([]);
   }
 
