@@ -70,7 +70,9 @@ export async function cancelSwap(input: {
       { chainKey: source.chain.key, quoteId: quote?.quoteId, fields: differs },
       "The hub intent isn't the quoted one",
     );
-    throw new ActionError("SWAP_MISMATCH", "The swap service returned a different intent than the one quoted.");
+    throw new ActionError("SWAP_MISMATCH", "The swap service returned a different intent than the one quoted.", {
+      details: { chainKey: source.chain.key },
+    });
   }
   if (!receipt || !cancelTxHash) {
     const { tx } = await buildCheckedCancel(source, intent);
@@ -122,7 +124,9 @@ async function buildCheckedCancel(source: SwapSource, intent: Intent): Promise<{
       { chainKey: source.chain.key, txTo: tx.to },
       "The Swaps API built a cancel that doesn't match the intent",
     );
-    throw new ActionError("SWAP_MISMATCH", "The swap service built a different cancel than expected.");
+    throw new ActionError("SWAP_MISMATCH", "The swap service built a different cancel than expected.", {
+      details: { chainKey: source.chain.key },
+    });
   }
   return { tx, payload };
 }
